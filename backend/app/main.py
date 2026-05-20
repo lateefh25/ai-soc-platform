@@ -1,78 +1,48 @@
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-import random
-import asyncio
+import threading
+
+from app.services.log_reader import stream_logs
+from app.services.ai_analyzer import analyze
+from app.services.incident_engine import create_incident
 
 app = FastAPI()
 
-
-logs = []
-
-
-fake_logs = [
-    "FAILED LOGIN from 192.168.1.12",
-    "MALWARE DETECTED on HOST-22",
-    "PORT SCAN DETECTED from 45.33.21.9",
-    "SUCCESSFUL LOGIN from 192.168.1.20",
-    "RANSOMWARE ACTIVITY DETECTED",
-    "MULTIPLE PASSWORD FAILURES",
-    "UNAUTHORIZED ACCESS ATTEMPT",
-]
+incidents = []
 
 
-def analyze_log(log):
+def soc_engine():
 
-    log = log.lower()
+    for log in stream_logs():
 
-    if "failed" in log:
-        return "⚠️ Brute Force Attempt"
+        analysis = analyze(log)
 
-    elif "malware" in log:
-        return "🚨 Malware Threat"
+        incident = create_incident(log, analysis)
 
-    elif "port scan" in log:
-        return "🔍 Recon Activity"
+        incidents.insert(0, incident)
 
-    elif "ransomware" in log:
-        return "☠️ Critical Threat"
-
-    else:
-        return "✅ Normal Activity"
-
-
-async def generate_logs():
-
-    while True:
-
-        new_log = random.choice(fake_logs)
-
-        threat = analyze_log(new_log)
-
-        logs.insert(0, {
-            "log": new_log,
-            "threat": threat
-        })
-
-        if len(logs) > 15:
-            logs.pop()
-
-        await asyncio.sleep(3)
+        if len(incidents) > 20:
+            incidents.pop()
 
 
 @app.on_event("startup")
-async def startup_event():
+def startup_event():
 
-    asyncio.create_task(generate_logs())
+    thread = threading.Thread(target=soc_engine)
+
+    thread.daemon = True
+
+    thread.start()
 
 
 @app.get("/", response_class=HTMLResponse)
-async def dashboard():
+def dashboard():
 
-    html_logs = ""
+    html = ""
 
-    for item in logs:
+    for incident in incidents:
 
-        html_logs += f"""
+        html += f"""
 
         <div style="
             border:1px solid lime;
@@ -81,9 +51,15 @@ async def dashboard():
             border-radius:10px;
         ">
 
-            <h3>{item['log']}</h3>
+            <h3>{incident['threat']}</h3>
 
-            <p>{item['threat']}</p>
+            <p><b>Severity:</b> {incident['severity']}</p>
+
+            <p><b>Incident ID:</b> {incident['incident_id']}</p>
+
+            <p><b>Log:</b> {incident['log']}</p>
+
+            <p><b>Status:</b> {incident['status']}</p>
 
         </div>
         """
@@ -95,9 +71,9 @@ async def dashboard():
 
     <head>
 
-        <title>AI SOC Dashboard</title>
+        <title>AI SOC Platform</title>
 
-        <meta http-equiv="refresh" content="3">
+        <meta http-equiv="refresh" content="2">
 
     </head>
 
@@ -108,11 +84,11 @@ async def dashboard():
         padding:30px;
     ">
 
-        <h1>🛡️ LIVE AI SOC DASHBOARD</h1>
+        <h1>🛡️ AI SOC Platform</h1>
 
-        <h3>Real-Time Threat Monitoring</h3>
+        <h2>Autonomous Level-1 SOC Monitoring</h2>
 
-        {html_logs}
+        {html}
 
     </body>
 
